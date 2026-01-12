@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['close', 'sampling']
+
+roboflow:
+  workspace: ybn
+  project: sampling_close_v1
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/ybn/sampling_close_v1/dataset/3

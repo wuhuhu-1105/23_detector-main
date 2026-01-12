@@ -1,0 +1,34 @@
+{
+  "state_entries": {
+    "OPEN_UNKNOWN": 1,
+    "OPEN_VIOLATION": 1
+  },
+  "state_durations_ms": {
+    "OPEN_UNKNOWN": 80.0,
+    "OPEN_VIOLATION": 0.0
+  },
+  "transition_count": 1,
+  "top_transitions": [
+    {
+      "from": "OPEN_UNKNOWN",
+      "to": "OPEN_VIOLATION",
+      "count": 1
+    }
+  ],
+  "short_jitter_count": 2,
+  "close_open_switches": 0,
+  "max_switches_per_sec": 1,
+  "status": "PASS",
+  "anomalies": [
+    {
+      "start_ms": 0.0,
+      "end_ms": 80.0,
+      "reason": "short_state"
+    },
+    {
+      "start_ms": 80.0,
+      "end_ms": 80.0,
+      "reason": "short_state"
+    }
+  ]
+}
