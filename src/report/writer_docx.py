@@ -309,6 +309,185 @@ def _build_key_findings(report: Report) -> List[tuple[str, str]]:
     return findings[:3]
 
 
+def _init_docx_styles(document):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+
+    FONT_ZH = "SimSun"
+    FONT_EN = "Times New Roman"
+    PT_TITLE = 18
+    PT_H1 = 14
+    PT_BODY = 11
+    PT_TABLE = 10.5
+    HEADER_SHADE = "D9D9D9"
+
+    def set_run_font_bilingual(
+        run,
+        font_en: str = FONT_EN,
+        font_zh: str = FONT_ZH,
+        size_pt: Optional[float] = None,
+        bold: Optional[bool] = None,
+        italic: Optional[bool] = None,
+    ) -> None:
+        r = run._element
+        r_pr = r.get_or_add_rPr()
+        r_fonts = r_pr.get_or_add_rFonts()
+        r_fonts.set(qn("w:ascii"), font_en)
+        r_fonts.set(qn("w:hAnsi"), font_en)
+        r_fonts.set(qn("w:eastAsia"), font_zh)
+        r_fonts.set(qn("w:cs"), font_en)
+        run.font.name = font_en
+        if size_pt is not None:
+            run.font.size = Pt(size_pt)
+        if bold is not None:
+            run.bold = bold
+        if italic is not None:
+            run.italic = italic
+
+    def _set_paragraph_spacing(paragraph, *, before_pt: float, after_pt: float, line_spacing: Optional[float]) -> None:
+        p_format = paragraph.paragraph_format
+        p_format.space_before = Pt(before_pt)
+        p_format.space_after = Pt(after_pt)
+        if line_spacing is not None:
+            p_format.line_spacing = line_spacing
+
+    def add_title(text: str) -> None:
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.keep_with_next = True
+        run = paragraph.add_run(text)
+        set_run_font_bilingual(run, size_pt=PT_TITLE, bold=True)
+        _set_paragraph_spacing(paragraph, before_pt=6, after_pt=6, line_spacing=None)
+
+    def add_h1(text: str) -> None:
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.keep_with_next = True
+        run = paragraph.add_run(text)
+        set_run_font_bilingual(run, size_pt=PT_H1, bold=True)
+        _set_paragraph_spacing(paragraph, before_pt=6, after_pt=6, line_spacing=None)
+
+    def add_para(text: str, *, italic: bool = False) -> None:
+        paragraph = document.add_paragraph()
+        run = paragraph.add_run(text)
+        set_run_font_bilingual(run, size_pt=PT_BODY, italic=italic)
+        _set_paragraph_spacing(paragraph, before_pt=0, after_pt=3, line_spacing=1.2)
+
+    def _shade_cell(cell, color: str) -> None:
+        tc_pr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:fill"), color)
+        tc_pr.append(shd)
+
+    def _set_cell_text(
+        cell,
+        text: str,
+        *,
+        bold: bool,
+        align: str,
+        size_pt: float,
+        line_spacing: float,
+        before_pt: float,
+        after_pt: float,
+    ) -> None:
+        cell.text = ""
+        paragraph = cell.paragraphs[0]
+        if align == "right":
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        elif align == "center":
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        else:
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        _set_paragraph_spacing(paragraph, before_pt=before_pt, after_pt=after_pt, line_spacing=line_spacing)
+        run = paragraph.add_run(text)
+        set_run_font_bilingual(run, size_pt=size_pt, bold=bold)
+
+    def _add_table(headers: List[str], rows: List[List[str]]) -> None:
+        table = document.add_table(rows=1, cols=len(headers))
+        table.style = "Table Grid"
+        table.autofit = True
+        for idx, header in enumerate(headers):
+            _set_cell_text(
+                table.rows[0].cells[idx],
+                header,
+                bold=True,
+                align="center",
+                size_pt=PT_TABLE,
+                line_spacing=1.0,
+                before_pt=0,
+                after_pt=0,
+            )
+            _shade_cell(table.rows[0].cells[idx], HEADER_SHADE)
+        for row in rows:
+            row_cells = table.add_row().cells
+            for idx, value in enumerate(row):
+                _set_cell_text(
+                    row_cells[idx],
+                    value,
+                    bold=False,
+                    align="left",
+                    size_pt=PT_TABLE,
+                    line_spacing=1.0,
+                    before_pt=0,
+                    after_pt=0,
+                )
+
+    for section in document.sections:
+        section.top_margin = Cm(2.54)
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(2.54)
+        section.right_margin = Cm(2.54)
+        section.gutter = Cm(0)
+
+    return add_title, add_h1, add_para, _add_table
+
+
+def write_snapshot_docx(data: dict, path: str) -> str:
+    try:
+        from docx import Document
+    except ImportError as exc:
+        raise ImportError("python-docx is required for report.docx generation") from exc
+
+    document = Document()
+    add_title, add_h1, add_para, add_table = _init_docx_styles(document)
+
+    add_title("Realtime Snapshot / 实时快照")
+    add_h1("1. Snapshot Summary / 快照摘要")
+    add_para(f"Export time: {data.get('timestamp', '-')}")
+    add_para(f"Range start: {data.get('range_start', '-')}")
+    add_para(f"Range end: {data.get('range_end', '-')}")
+    add_para(f"Last frame: {data.get('frame_index', '-')}")
+    add_para(f"State: {data.get('state_5class', '-')}")
+    add_para(f"State CN: {data.get('state_cn', '-')}")
+
+    entries = data.get("entries") or []
+    add_h1("2. Log Entries / 日志记录")
+    if not entries:
+        add_para("No entries recorded.")
+    else:
+        rows = []
+        for item in entries:
+            rows.append(
+                [
+                    str(item.get("timestamp", "-")),
+                    str(item.get("frame_index", "-")),
+                    str(item.get("video_t_s", "-")),
+                    str(item.get("state_5class", "-")),
+                    str(item.get("people_count", "-")),
+                    ",".join(item.get("tags_c_set") or []),
+                    ",".join(item.get("tags_d_set") or []),
+                ]
+            )
+        add_table(
+            ["Time", "Frame", "Video t(s)", "State", "People", "Tags C", "Tags D"],
+            rows,
+        )
+
+    document.save(path)
+    return path
+
+
 def write_report_docx(report: Report, path: str, *, progress: Optional[object] = None) -> str:
     try:
         from docx import Document

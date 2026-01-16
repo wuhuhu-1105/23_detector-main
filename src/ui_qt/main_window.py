@@ -1,6 +1,8 @@
 ﻿# -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import json
+import os
 import time
 from typing import Dict, Optional, Tuple
 
@@ -25,6 +27,9 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.types import FrameOutput
+from src.core.paths import get_outputs_root
+from src.runtime.serialization import to_jsonable
+from src.report import write_snapshot_docx
 from src.runtime.qt_adapter import draw_detections, output_to_status
 from src.ui_qt.state_view_spec import StatusDTO
 
@@ -63,6 +68,8 @@ class MainWindow(QMainWindow):
         self._latest_status: Optional[StatusDTO] = None
         self._latest_seq = 0
         self._rendered_seq = -1
+        self._snapshot_log = []
+        self._snapshot_last_key: Optional[tuple] = None
         self._display_tick_count = 0
         self._display_tick_t0 = time.perf_counter()
         self._display_fps_est = 0.0
@@ -210,7 +217,7 @@ class MainWindow(QMainWindow):
         self._pause_btn.setFixedHeight(42)
         self._pause_btn.clicked.connect(self._toggle_pause)
 
-        self._export_btn = QPushButton("\u5bfc\u51fa\u65e5\u62a5\u8868")
+        self._export_btn = QPushButton("\u62a5\u544a\u5bfc\u51fa")
         self._export_btn.setObjectName("ExportButton")
         self._export_btn.setFixedHeight(42)
         self._export_btn.clicked.connect(self._on_export)
@@ -220,8 +227,8 @@ class MainWindow(QMainWindow):
         button_layout = QVBoxLayout()
         button_layout.setContentsMargins(12, 8, 12, 8)
         button_layout.setSpacing(12)
-        button_layout.addWidget(self._pause_btn)
         button_layout.addWidget(self._export_btn)
+        button_layout.addWidget(self._pause_btn)
         self._button_row.setLayout(button_layout)
         self._button_row.setFixedHeight(112)
 
@@ -461,7 +468,80 @@ class MainWindow(QMainWindow):
         self._log.verticalScrollBar().setValue(self._log.verticalScrollBar().maximum())
 
     def _on_export(self) -> None:
-        self.export_requested.emit()
+        path, error = self._export_snapshot()
+        if error:
+            self.append_log(f"Export: {error}")
+        elif path:
+            self.append_log(f"Export: snapshot saved -> {path}")
+        else:
+            self.append_log("Export: no frame data yet.")
+
+    def _export_snapshot(self) -> Tuple[Optional[str], Optional[str]]:
+        if self._latest_meta is None:
+            return None, None
+        status = output_to_status(self._latest_meta)
+        payload = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "frame_index": status.frame_index,
+            "state_raw": status.state_raw,
+            "state_5class": status.state_5class,
+            "state_cn": status.state_cn,
+            "duration_s": status.duration_s,
+            "video_t_s": status.video_t_s,
+            "tags_c_set": status.tags_c_set,
+            "tags_d_set": status.tags_d_set,
+            "people_count": status.people_count,
+            "people_ok": status.people_ok,
+            "people_alarm": status.people_alarm,
+            "fps": status.fps,
+            "target_ratio": status.target_ratio,
+            "range_start": self._snapshot_log[0]["timestamp"] if self._snapshot_log else None,
+            "range_end": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "entries": list(self._snapshot_log),
+        }
+        payload = to_jsonable(payload)
+        out_root = get_outputs_root()
+        out_dir = os.path.join(out_root, "snapshots")
+        os.makedirs(out_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        base = os.path.join(out_dir, f"snapshot_{stamp}.docx")
+        path = base
+        suffix = 1
+        while os.path.exists(path):
+            path = os.path.join(out_dir, f"snapshot_{stamp}_{suffix}.docx")
+            suffix += 1
+        try:
+            write_snapshot_docx(payload, path)
+        except Exception as exc:
+            return None, f"failed to write docx: {exc}"
+        return path, None
+
+    def _maybe_log_snapshot(self, status: StatusDTO) -> None:
+        tags_c = tuple(sorted(status.tags_c_set or []))
+        tags_d = tuple(sorted(status.tags_d_set or []))
+        key = (
+            status.state_5class,
+            status.people_count,
+            tags_c,
+            tags_d,
+        )
+        if self._snapshot_last_key == key and self._snapshot_log:
+            return
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "frame_index": status.frame_index,
+            "video_t_s": status.video_t_s,
+            "state_5class": status.state_5class,
+            "state_cn": status.state_cn,
+            "people_count": status.people_count,
+            "people_alarm": status.people_alarm,
+            "tags_c_set": list(tags_c),
+            "tags_d_set": list(tags_d),
+            "fps": status.fps,
+            "target_ratio": status.target_ratio,
+        }
+        self._snapshot_log.append(entry)
+        self._snapshot_last_key = key
 
     def _toggle_pause(self) -> None:
         self._paused = not self._paused
@@ -516,6 +596,7 @@ class MainWindow(QMainWindow):
         if self._latest_meta is not None:
             status = output_to_status(self._latest_meta)
             self._latest_status = status
+            self._maybe_log_snapshot(status)
             self._update_status_table(status)
             self._update_people(status)
             self._update_state_label(status)
