@@ -1,0 +1,28 @@
+# 1) Core/shared
+/src/core/                 @Eason412
+/src/core/**               @Eason412
+/tools/                    @Eason412
+/tools/**                  @Eason412
+/.github/                  @Eason412
+/.github/**                @Eason412
+/service_contracts.md      @Eason412
+/refactor_report.md        @Eason412
+/README.md                 @Eason412
+/ARCHITECTURE.md           @Eason412
+
+# 2) Offline report
+/src/services/report_service.py        @Eason412
+/src/services/report_impl/             @Eason412
+/src/services/report_impl/**           @Eason412
+/src/report/                           @Eason412
+/src/report/**                         @Eason412
+/src/cli/report_gen.py                 @Eason412
+/tools/smoke_local.py                  @Eason412
+/tools/smoke_local.md                  @Eason412
+
+# 3) Realtime/UI
+/src/services/realtime_service.py      @wuhuhu-1105
+/src/services/realtime_impl/           @wuhuhu-1105
+/src/services/realtime_impl/**         @wuhuhu-1105
+/src/ui_qt/                            @wuhuhu-1105
+/src/ui_qt/**                          @wuhuhu-1105

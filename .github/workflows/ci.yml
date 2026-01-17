@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Service import guard
+        run: python tools/check_service_imports.py
+
+      - name: CLI help (app_qt)
+        run: python -m src.app_qt -h
+
+      - name: CLI help (report_gen)
+        run: python -m src.cli.report_gen -h
